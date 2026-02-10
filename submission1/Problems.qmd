@@ -1,0 +1,525 @@
+---
+title: "Homework 2"
+subtitle: "Submission 1, Spring 2026"
+author: "Sophie Kim"
+format:
+  pdf:
+    output-file: "Kim-S-hwk2-1"
+    output-ext:  "pdf"
+    header-includes:
+      - \usepackage{float}
+      - \floatplacement{table}{H}
+---
+
+```{r}
+#| include: false
+library(tidyverse)
+library(stringr)
+library(readr)
+library(fs)
+```
+
+```{r}
+#| include: false
+data.2014 <- read_csv("..//data/output/data-2014.csv")
+data.2015 <- read_csv("..//data/output/data-2015.csv")
+data.2016 <- read_csv("..//data/output/data-2016.csv")
+data.2017 <- read_csv("..//data/output/data-2017.csv")
+data.2018 <- read_csv("..//data/output/data-2018.csv")
+```
+
+```{r}
+#| include: false
+combined <- bind_rows(
+  data.2014,
+  data.2015,
+  data.2016,
+  data.2017,
+  data.2018
+)
+```
+
+```{r}
+#| include: false
+glimpse(combined)
+```
+
+Problem 1
+
+```{r}
+#| include: false
+plan_counts <- combined %>% 
+count(county, year.x, name = "plan_count")
+```
+
+```{r}
+#| echo: false
+boxplot(plan_count ~ year.x, data = plan_counts,
+        xlab = "Year",
+        ylab = "Plan count",
+        main = "Distribution of plan counts by year" )
+```
+
+```{r}
+#| include: false
+combined <- combined %>% mutate (basic_premium = case_when(
+        rebate_partc > 0 ~ 0,
+        partd == "No" & !is.na(premium) & is.na(premium_partc) ~ premium,
+        TRUE ~ premium_partc
+      ),
+      bid = case_when(
+        rebate_partc == 0 & basic_premium > 0 ~ (payment_partc + basic_premium) / riskscore_partc,
+        rebate_partc > 0  | basic_premium == 0 ~  payment_partc / riskscore_partc,
+        TRUE ~ NA_real_
+      )
+                                 )
+```
+
+```{r}
+#| echo: false
+ggplot(filter(combined, year.x == 2014, !is.na(bid)), aes(x = bid)) +
+  geom_histogram(bins = 40, fill = "steelblue", color = "white") +
+  labs(
+    title = "Distribution of Medicare Advantage Plan Bids (2014)",
+    x = "Plan bid",
+    y = "Frequency"
+  ) 
+```
+
+```{r}
+#| echo: false
+ggplot(filter(combined, year.x == 2018, !is.na(bid)), aes(x = bid)) +
+  geom_histogram(bins = 40, fill = "steelblue", color = "white") +
+  labs(
+    title = "Distribution of Medicare Advantage Plan Bids (2018)",
+    x = "Plan bid",
+    y = "Frequency"
+  ) 
+```
+
+Problem 3
+
+```{r}
+#| include: false
+combined_hhi <- combined %>%
+  filter(!is.na(avg_enrolled), avg_enrolled > 0) %>%
+  filter(!is.na(avg_enrollment), avg_enrollment > 0) %>%
+  group_by(fips, year.x) %>%
+  mutate(market_share = avg_enrollment / avg_enrolled
+  ) %>%
+  ungroup()
+```
+
+```{r}
+#| include: false
+county_hhi <- combined_hhi %>%
+  group_by(fips, year.x) %>%
+  summarise(
+    hhi = sum(market_share^2),
+    .groups = "drop"
+  )
+```
+
+```{r}
+#| include: false
+avg_hhi <- county_hhi %>%
+  group_by(year.x) %>%
+  summarise(
+    avg_hhi = mean(hhi),
+    .groups = "drop"
+  )
+```
+
+```{r}
+avg_hhi
+```
+
+```{r}
+#| echo: false
+ggplot(avg_hhi, aes(x = year.x, y = avg_hhi)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Average Medicare Advantage Market Concentration (HHI)",
+    x = "Year",
+    y = "Average HHI"
+  )
+```
+
+Problem 4
+
+```{r}
+#| include: false
+ma_year <- combined %>%
+  group_by(year.x) %>%
+    mutate(ma_share = avg_enrolled / avg_eligibles) %>%
+    summarise(mean = mean(ma_share, na.rm=TRUE), groups = "drop")
+```
+
+```{r}
+ma_year
+```
+
+```{r}
+#| echo: false
+ggplot(ma_year, aes(x = year.x, y = mean)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Average Share of Medicare Advantage over Time",
+    x = "Year",
+    y = "Average Share"
+  )
+```
+
+```{r}
+#| include: false
+glimpse(data.2018)
+```
+
+Problem 5
+
+```{r}
+#| include: false
+marketshare2018 <- data.2018 %>%
+  filter(!is.na(avg_enrolled), avg_enrolled > 0) %>%
+  filter(!is.na(avg_enrollment), avg_enrollment > 0) %>%
+  group_by(fips, year.x) %>%
+  mutate(market_share = avg_enrollment / avg_enrolled
+  ) %>%
+  ungroup()
+```
+
+```{r}
+#| include: false
+hhi_2018 <- marketshare2018 %>%
+  group_by(fips) %>%
+  mutate(
+    hhi = sum(market_share^2, na.rm = TRUE),
+  )%>%
+  ungroup()
+```
+
+```{r}
+#| include: false
+glimpse(hhi_2018)
+```
+
+```{r}
+#| include: false
+hhi_33 <- quantile(hhi_2018$hhi, 0.33, na.rm = TRUE)
+hhi_66 <- quantile(hhi_2018$hhi, 0.66, na.rm = TRUE)
+```
+
+```{r}
+#| include: false
+hhi_2018 <- hhi_2018 %>%
+  mutate(
+    market_type = case_when(
+      hhi <= hhi_33 ~ "Competitive",
+      hhi >= hhi_66 ~ "Uncompetitive",
+      TRUE ~ NA_character_
+    )
+  )
+```
+
+```{r}
+#| include: false
+avg_bid_by_market <- hhi_2018 %>%
+  filter(!is.na(market_type), !is.na(bid)) %>%
+  group_by(market_type) %>%
+  summarise(
+    avg_bid = mean(bid),
+    .groups = "drop"
+  )
+```
+
+```{r}
+print(avg_bid_by_market)
+```
+
+Problem 6
+
+```{r}
+#| include: false
+ffs.2018 <- read_csv("..//data/output/data-2018-ffs.csv")
+```
+
+```{r}
+#| include: false
+colnames(ffs.2018)
+```
+
+```{r}
+#| include: false
+ffs.2018 <- ffs.2018 %>%
+  mutate(
+    ffscost_q = ntile(avg_ffscost, 4)
+  )
+```
+
+```{r}
+#| include: false
+q1 <- ffs.2018 %>%
+  mutate(treated = if_else(ffscost_q == 1, "Treated", "Control")) %>%
+  group_by(treated) %>%
+  summarise(avg_bid = mean(bid, na.rm = TRUE), n = n(), .groups = "drop") %>%
+  mutate(quartile = "Q1")
+
+q2 <- ffs.2018 %>%
+  mutate(treated = if_else(ffscost_q == 2, "Treated", "Control")) %>%
+  group_by(treated) %>%
+  summarise(avg_bid = mean(bid, na.rm = TRUE), n = n(), .groups = "drop") %>%
+  mutate(quartile = "Q2")
+
+q3 <- ffs.2018 %>%
+  mutate(treated = if_else(ffscost_q == 3, "Treated", "Control")) %>%
+  group_by(treated) %>%
+  summarise(avg_bid = mean(bid, na.rm = TRUE), n = n(), .groups = "drop") %>%
+  mutate(quartile = "Q3")
+
+q4 <- ffs.2018 %>%
+  mutate(treated = if_else(ffscost_q == 4, "Treated", "Control")) %>%
+  group_by(treated) %>%
+  summarise(avg_bid = mean(bid, na.rm = TRUE), n = n(), .groups = "drop") %>%
+  mutate(quartile = "Q4")
+```
+
+```{r}
+big_avg_table <- bind_rows(q1, q2, q3, q4) %>%
+  select(quartile, treated, avg_bid, n)
+
+big_avg_table
+```
+
+Problem 7
+
+```{r}
+#| eval: false
+#| echo: true
+options(repos = c(CRAN = "https://cran.rstudio.com/"))
+install.packages("MatchIt")
+```
+
+```{r}
+#| eval: false
+#| echo: true
+ate_results <- lapply(1:4, function(q) {
+
+dat_q <- ffs.2018 %>%
+    mutate(
+      treat = ifelse(ffscost_q == q, 1, 0),
+      outcome = bid,
+      covar = avg_ffscost
+    )
+
+dat_q <- dat_q %>% 
+  filter(!is.na(outcome), !is.na(treat), !is.na(covar))
+
+nn2 <- Matching::Match(
+    Y = dat_q$outcome,
+    Tr = dat_q$treat,
+    X = dat_q$covar,
+    M = 1,
+    Weight = 1,
+    estimand = "ATE",
+    ties=FALSE
+  )
+
+  data.frame(
+    quartile = q,
+    ATE = nn2$est
+  )
+})
+
+ate_table <- do.call(rbind, ate_results)
+
+print(ate_table)
+```
+
+```{r}
+#| eval: false
+#| echo: true
+print(ate_table)
+```
+
+```{r}
+#| eval: false
+#| echo: true
+ate_results <- lapply(1:4, function(q) {
+
+dat_q <- ffs.2018 %>%
+    mutate(
+      treat = ifelse(ffscost_q == q, 1, 0),
+      outcome = bid,
+      covar = avg_ffscost
+    )
+
+dat_q <- dat_q %>% 
+  filter(!is.na(outcome), !is.na(treat), !is.na(covar))
+
+nn2 <- Matching::Match(
+    Y = dat_q$outcome,
+    Tr = dat_q$treat,
+    X = dat_q$covar,
+    M = 1,
+    Weight = 2,
+    estimand = "ATE",
+    ties=FALSE
+  )
+
+  data.frame(
+    quartile = q,
+    ATE = nn2$est
+  )
+})
+
+ate_table_2 <- do.call(rbind, ate_results)
+
+print(ate_table_2)
+```
+
+```{r}
+#| eval: false
+#| echo: true
+print(ate_table_2)
+```
+
+```{r}
+#| eval: false
+#| echo: true
+ate_results <- lapply(1:4, function(q) {
+
+  dat_q <- ffs.2018 %>%
+    mutate(
+      w = ifelse(ffscost_q == q, 1, 0),   
+      y = bid,
+      x = ffscost_q                      
+    ) %>%
+    filter(!is.na(y), !is.na(w), !is.na(x))
+
+  logit.model <- glm(w ~ factor(x), family = binomial, data = dat_q)
+  ps <- fitted(logit.model)
+
+  dat_q <- dat_q %>%
+    mutate(ipw = case_when(
+      w == 1 ~ 1 / ps,
+      w == 0 ~ 1 / (1 - ps),
+      TRUE ~ NA_real_
+    ))
+
+  mean.w1 <- dat_q %>%
+    filter(w == 1) %>%
+    summarise(mean_y = weighted.mean(y, ipw))
+
+  mean.w0 <- dat_q %>%
+    filter(w == 0) %>%
+    summarise(mean_y = weighted.mean(y, ipw))
+
+  data.frame(
+    quartile = q,
+    ATE_IPW = mean.w1$mean_y - mean.w0$mean_y
+  )
+})
+
+ate_table_ipw <- do.call(rbind, ate_results)
+print(ate_table_ipw)
+```
+
+```{r}
+#| eval: false
+#| echo: true
+print(ate_table_ipw)
+```
+
+```{r}
+#| eval: false
+#| echo: true
+ate_results_reg <- lapply(1:4, function(q) {
+
+  select.dat <- ffs.2018 %>%
+    mutate(
+      w = ifelse(ffscost_q == q, 1, 0),
+      y = bid,
+      x = ffscost_q
+    ) %>%
+    filter(!is.na(y), !is.na(w), !is.na(x))
+
+  reg <- lm(y ~ w * factor(x), data = select.dat)
+
+  pred1 <- predict(reg, newdata = transform(select.dat, w = 1))
+  pred0 <- predict(reg, newdata = transform(select.dat, w = 0))
+
+  ate <- mean(pred1 - pred0, na.rm = TRUE)
+
+  data.frame(
+    quartile = q,
+    ATE_regression = ate
+  )
+})
+
+ate_table_reg <- do.call(rbind, ate_results_reg)
+print(ate_table_reg)
+```
+
+```{r}
+#| eval: false
+#| echo: true
+print(ate_table_reg)
+```
+
+```{r}
+#| eval: false
+#| echo: true
+saveRDS(ate_table_reg, "ate_table_reg.rds")
+```
+
+Problem 8
+
+Nearest neighbor matching with inverse variance distance and with Mahalanobis distance have very similar average treatment effect values. However, when using inverse propensity weighting and simple linear regression, both methods output noticeably different values. 
+
+Problem 9
+
+```{r}
+#| eval: false
+#| echo: true
+ate_results_reg_cont <- lapply(1:4, function(q) {
+
+  select.dat <- ffs.2018 %>%
+    mutate(
+      w = ifelse(ffscost_q == q, 1, 0),
+      y = bid,
+      x1 = avg_ffscost,
+      x2 = n_enrol
+    ) %>%
+    filter(!is.na(y), !is.na(w), !is.na(x1), !is.na(x2))
+
+  reg <- lm(y ~ w * (x1 + x2), data = select.dat)
+
+  pred1 <- predict(reg, newdata = transform(select.dat, w = 1))
+  pred0 <- predict(reg, newdata = transform(select.dat, w = 0))
+
+  ate <- mean(pred1 - pred0, na.rm = TRUE)
+
+  data.frame(
+    quartile = q,
+    ATE_regression_continuous = ate
+  )
+})
+
+ate_table_reg_cont <- do.call(rbind, ate_results_reg_cont)
+print(ate_table_reg_cont)
+```
+
+```{r}
+#| eval: false
+#| echo: true
+print(ate_table_reg_cont)
+```
+
+
+Problem 10
+
+Working with this data allowed me to see how different estimators will give you vastly different values. One thing that I learned was that it is crucial to know what each name of the row represents so that there is no issue missing a part of the dataset. One thing that surprised me was how easy it was for library or model choices to cause errors or slow runtimes.
+
+
