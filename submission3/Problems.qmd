@@ -1,0 +1,574 @@
+---
+title: "Homework 2"
+subtitle: "Submission 3, Spring 2026"
+author: "Sophie Kim"
+format:
+  pdf:
+    output-file: "Kim-S-hwk2-3"
+    output-ext:  "pdf"
+    header-includes:
+      - \usepackage{float}
+      - \floatplacement{table}{H}
+---
+
+```{r}
+#| include: false
+library(tidyverse)
+library(stringr)
+library(readr)
+library(fs)
+library(knitr)
+library(kableExtra)
+```
+
+```{r}
+#| include: false
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, ggplot2, dplyr, lubridate, stringr, readxl, data.table, gdata, scales, kableExtra, modelsummary)
+
+f <- function(x) {
+  r <- quantile(x, probs = c(0.10, 0.25, 0.5, 0.75, 0.90))
+  names(r) <- c("ymin","lower","middle","upper","ymax")
+  r
+}
+```
+
+```{r}
+#| include: false
+data.2014 <- read_csv("..//data/output/data-2014-new.csv")
+data.2015 <- read_csv("..//data/output/data-2015.csv")
+data.2016 <- read_csv("..//data/output/data-2016.csv")
+data.2017 <- read_csv("..//data/output/data-2017.csv")
+data.2018 <- read_csv("..//data/output/data-2018-ffs.csv")
+data.2019 <- read_csv("..//data/output/data-2019.csv")
+```
+
+```{r}
+#| include: false
+combined <- bind_rows(
+  data.2014,
+  data.2015,
+  data.2016,
+  data.2017,
+  data.2018,
+  data.2019
+)
+```
+
+```{r}
+#| include: false
+names(combined)
+```
+
+```{r}
+#| include: false
+combined <- combined %>% mutate (basic_premium = case_when(
+        rebate_partc > 0 ~ 0,
+        partd == "No" & !is.na(premium) & is.na(premium_partc) ~ premium,
+        TRUE ~ premium_partc
+      ),
+      bid = case_when(
+        rebate_partc == 0 & basic_premium > 0 ~ (payment_partc + basic_premium) / riskscore_partc,
+        rebate_partc > 0  | basic_premium == 0 ~  payment_partc / riskscore_partc,
+        TRUE ~ NA_real_
+      )
+                                 )
+```
+
+
+# Problem 1
+From the boxplots, the median number of plans increase consistently as time progresses. It seems like there is an excess number of plans, and although an increase of plan availibility may suggest competition, there could be an overload of options to choose from for potential enrollees. 
+Even after removing outliers, the median number of plans is more than 10 which could pose as a challenge for a layperson to compare effectively. 
+
+```{r}
+#| echo: false
+#| warning: false
+#| label: fig-final-plan
+#| fig-cap: "MA Plan Counts by County"
+
+plan_counts <- combined %>%
+    group_by(fips, year) %>%
+    summarise(plan_count = n())
+
+ggplot(plan_counts, aes(x = factor(year), y = plan_count)) +
+ geom_boxplot(outlier.shape = NA) +
+ coord_cartesian(ylim = c(0, 70)) +
+  labs(
+    x = "Year",
+    y = "Number of Plans per County",
+    title = "Distribution of Medicare Advantage Plan Counts by County (2014–2019)"
+  ) +
+  theme_minimal()
+```
+
+\newpage
+
+# Problem 2
+
+After scaling the x and y axis for appropriate comparison of the 2014 and 2018 histogram, a subtle shift of the distribution to fewer plan bids (to the left) can be seen between 2014 to 2018. Additionally, the bid count substantially increased in 2018 compared to 2014, showing a larger number of lower bids being submitted. 
+
+```{r}
+#| echo: false
+#| fig-cap: "2014 MA Plan Bids"
+
+ggplot(filter(combined, year == 2014, !is.na(bid)), aes(x = bid)) +
+  geom_histogram(bins = 40, fill = "blue", color = "white") +
+  coord_cartesian(xlim = c(0, 1500), ylim = c(0, 12000)) +
+  labs(
+    title = "Distribution of Medicare Advantage Plan Bids (2014)",
+    x = "Plan bid",
+    y = "Plan Count"
+  ) + 
+  theme_minimal()
+```
+
+```{r}
+#| echo: false
+#| fig-cap: "2018 MA Plan Bids"
+ggplot(filter(combined, year == 2018, !is.na(bid)), aes(x = bid)) +
+  geom_histogram(bins = 40, fill = "steelblue", color = "white") +
+  coord_cartesian(xlim = c(0, 1500)) +
+  labs(
+    title = "Distribution of Medicare Advantage Plan Bids (2018)",
+    x = "Plan bid",
+    y = "Plan Count"
+  ) +
+  theme_minimal()
+```
+
+\newpage
+# Problem 3
+
+HHI (0-1 scale used) decreases over time, which shows that the market's competitiveness increased from 2014 to 2019. Typically, since an HHI below 0.15 is considered competitive, the Medicare Advantage market can be seen as going from uncompetitive to competitive at around 2018. 
+
+```{r}
+#| include: false
+combined_hhi <- combined %>%
+  filter(!is.na(avg_enrolled), avg_enrolled > 0) %>%
+  filter(!is.na(avg_enrollment), avg_enrollment > 0) %>%
+  group_by(fips, year) %>%
+  mutate(market_share = avg_enrollment / avg_enrolled
+  ) %>%
+  ungroup()
+```
+
+```{r}
+#| include: false
+county_hhi <- combined_hhi %>%
+  group_by(fips, year) %>%
+  summarise(
+    hhi = sum(market_share^2),
+    .groups = "drop"
+  )
+```
+
+```{r}
+#| include: false
+avg_hhi <- county_hhi %>%
+  group_by(year) %>%
+  summarise(
+    avg_hhi = mean(hhi),
+    .groups = "drop"
+  )
+
+avg_hhi
+```
+
+```{r}
+#| echo: false
+#| label: fig-hhi-plot
+#| fig-cap: "Average Medicare Advantage Market Concentration (HHI)"
+
+ggplot(avg_hhi, aes(x = year, y = avg_hhi)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Average Medicare Advantage Market Concentration (HHI)",
+    x = "Year",
+    y = "Average HHI"
+  ) +
+  theme_minimal()
+```
+
+\newpage
+# Problem 4
+
+The average share of Medicare Advantage in the market (out of total of 1) over time increases consistently from 2014 to 2019. 
+
+```{r}
+#| include: false
+ma_year <- combined %>%
+  group_by(year) %>%
+    mutate(ma_share = avg_enrolled / avg_eligibles) %>%
+    distinct(fips, year, .keep_all = TRUE) %>%
+    summarise(
+    mean_ma_share = weighted.mean(ma_share, w = avg_eligibles, na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+```{r}
+#| echo: false
+#| label: fig-share-plot
+#| fig-cap: "Average Share of Medicare Advantage over Time"
+
+ggplot(ma_year, aes(x = year, y =  mean_ma_share)) +
+  geom_line() +
+  geom_point() +
+  coord_cartesian(ylim = c(0.3, 0.4)) +
+  labs(
+    title = "Average Share of Medicare Advantage over Time",
+    x = "Year",
+    y = "Average Share"
+  ) +
+  theme_minimal()
+```
+
+
+\newpage
+# Problem 5
+
+```{r}
+#| include: false
+marketshare2018 <- data.2018 %>%
+  filter(!is.na(avg_enrolled), avg_enrolled > 0) %>%
+  filter(!is.na(avg_enrollment), avg_enrollment > 0) %>%
+  group_by(fips, year) %>%
+  mutate(ma_share = avg_enrollment / avg_enrolled
+  ) %>%
+  ungroup()
+```
+
+```{r}
+#| include: false
+market.data <- marketshare2018 %>%
+  group_by(fips) %>%
+  summarize(hhi = sum(ma_share^2, na.rm = TRUE),
+            bid = mean(bid, na.rm = TRUE),
+            avg_ffscost = mean(avg_ffscost, na.rm = TRUE),
+           avg_eligibles=mean(avg_eligibles, na.rm=TRUE),
+            .groups = "drop")
+```
+
+```{r}
+#| include: false
+hhi_33 <- quantile(market.data$hhi, 0.33, na.rm = TRUE)
+hhi_66 <- quantile(market.data$hhi, 0.66, na.rm = TRUE)
+```
+
+```{r}
+#| include: false
+market.data <- market.data %>%
+  mutate(market_type = case_when(
+    hhi <= hhi_33 ~ "Competitive",
+    hhi >= hhi_66 ~ "Uncompetitive",
+    TRUE ~ NA_character_
+  ))
+```
+
+```{r}
+#| include: false
+avg_bid_by_market <- market.data %>%
+  filter(!is.na(market_type), !is.na(bid)) %>%
+  group_by(market_type) %>%
+  summarise(avg_bid = mean(bid, na.rm = TRUE), n_markets = n(), .groups = "drop")
+
+avg_bid_by_market
+```
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| tbl-cap: Average Bid by Market Type (2018)
+
+avg_bid_by_market |>
+  dplyr::mutate(avg_bid = round(avg_bid, 5)) |>
+  dplyr::rename(
+    `Market type` = market_type,
+    `Average bid` = avg_bid,
+    `N markets`   = n_markets
+  ) |>
+  knitr::kable(
+    col.names = c("Market type", "Average bid", "N markets"),
+    format.args = list(big.mark = ","),
+    booktabs = TRUE
+  ) %>%
+  kable_styling(latex_options = "hold_position")
+```
+
+```{r}
+#| include: false
+glimpse(market.data)
+```
+
+\newpage
+# Problem 6
+
+```{r}
+#| include: false
+market.data <- market.data %>%
+  mutate(
+    treated = case_when(
+      market_type == "Uncompetitive" ~ "Treated (high HHI)",
+      market_type == "Competitive" ~ "Control (low HHI)",
+      TRUE ~ NA_character_
+    )
+  )
+
+cuts <- quantile(
+    market.data$avg_ffscost, 
+    probes = c(0, .25, .5, .75, 1), na.rm = TRUE)
+
+market.data$ffs_q <- cut(
+    market.data$avg_ffscost,
+    breaks = cuts,
+    include.lowest = TRUE,
+    labels = c("Q1", "Q2", "Q3", "Q4"))
+
+market.data <- market.data %>%
+  mutate(
+    ffs_q1 = as.integer(ffs_q == "Q1"),
+    ffs_q2 = as.integer(ffs_q == "Q2"),
+    ffs_q3 = as.integer(ffs_q == "Q3"),
+    ffs_q4 = as.integer(ffs_q == "Q4")
+  )
+```
+
+```{r}
+#| include: false
+market.data %>%
+    filter(!is.na(treated), !is.na(ffs_q)) %>%
+    group_by(treated, ffs_q) %>%
+    summarize(mean.bid = mean (bid, na.rm = TRUE))
+```
+
+```{r}
+#| include: false
+avg_bid_wide <- market.data %>%
+  filter(!is.na(treated), !is.na(ffs_q), !is.na(bid)) %>%
+  group_by(treated, ffs_q) %>%
+  summarize(mean_bid = mean(bid, na.rm = TRUE), .groups = "drop") %>%
+  mutate(mean_bid = round(mean_bid, 2)) %>%
+  pivot_wider(names_from = treated, values_from = mean_bid)
+```
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| tbl-cap: Mean Bids (2018)
+
+options(knitr.kable.NA = 0)
+knitr::kable(avg_bid_wide,
+            col.names = c("FFS Quartile","Low HHI (Competitive)","High HHI (Uncompetitive)"),
+             format.args=list(big.mark=","),
+             booktabs = TRUE) %>%
+             kable_styling(latex_options="hold_position")
+
+
+```
+
+
+\newpage
+# Problem 7
+
+```{r}
+#| include: false
+options(repos = c(CRAN = "https://cran.rstudio.com/"))
+install.packages("Matching")
+```
+
+```{r}
+#| include: false
+market.data <- market.data %>%
+  filter(
+    !is.na(bid),
+    !is.na(market_type),
+    !is.na(ffs_q),
+    !is.na(ffs_q1), !is.na(ffs_q2), !is.na(ffs_q3), !is.na(ffs_q4)
+  )
+```
+
+```{r}
+#| include: false
+ate_inv <- Matching::Match(Y=market.data$bid,
+                Tr=as.integer(market.data$market_type == "Uncompetitive"),
+                X= (market.data %>% select(ffs_q1, ffs_q2, ffs_q3, ffs_q4)),
+                M=1,
+                Weight=1,
+                #ties = FALSE,
+                version = "fast",
+                estimand="ATE")
+```
+
+```{r}
+#| include: false
+ate_inv$est
+```
+
+```{r}
+#| include: false
+ate_mah <- Matching::Match(Y=market.data$bid,
+                          Tr=as.integer(market.data$market_type == "Uncompetitive"),
+                          X= (market.data %>% select(ffs_q1, ffs_q2, ffs_q3, ffs_q4)),
+                          M=1,
+                          Weight=2,
+                         # ties = FALSE,
+                          version = "fast",
+                          estimand="ATE")
+```
+
+```{r}
+#| include: false
+ate_mah$est
+```
+
+```{r}
+#| include: false
+market.data <- market.data %>%
+  mutate(treat = as.integer(market_type == "Uncompetitive"))
+```
+
+```{r}
+#| include: false
+logit.model <- glm(
+  treat ~ ffs_q1 + ffs_q2 + ffs_q3 + ffs_q4,
+  family = binomial,
+  data = market.data
+)
+
+market.data$ps <- fitted(logit.model)
+
+market.data <- market.data %>%
+  mutate(ipw = case_when(
+    treat == 1 ~ 1 / ps,
+    treat == 0 ~ 1 / (1 - ps)
+  ))
+
+mean.w1 <- market.data %>%
+  filter(treat == 1) %>%
+  summarize(mean_y = weighted.mean(bid, ipw, na.rm = TRUE))
+
+mean.w0 <- market.data %>%
+  filter(treat == 0) %>%
+  summarize(mean_y = weighted.mean(bid, ipw, na.rm = TRUE))
+
+ate_ipw <- mean.w1$mean_y - mean.w0$mean_y
+```
+
+```{r}
+#| include: false
+ate_ipw
+```
+
+```{r}
+#| include: false
+reg1 <- lm(
+  bid ~ ffs_q1 + ffs_q2 + ffs_q3 + ffs_q4,
+  data = market.data %>% filter(treat == 1)
+)
+
+reg0 <- lm(
+  bid ~ ffs_q1 + ffs_q2 + ffs_q3 + ffs_q4,
+  data = market.data %>% filter(treat == 0)
+)
+
+pred1 <- predict(reg1, newdata = market.data)
+pred0 <- predict(reg0, newdata = market.data)
+
+ate_reg <- mean(pred1 - pred0, na.rm = TRUE)
+ate_reg
+```
+
+```{r}
+#| include: false
+results <- data.frame(
+  ate_inv = ate_inv$est,
+  ate_mah = ate_mah$est,
+  ate_ipw = ate_ipw,
+  ate_reg = ate_reg
+)
+
+results
+```
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| tbl-cap: Average Treatment Estimators
+options(knitr.kable.NA = 0)
+
+results_pretty <- data.frame(
+  INV = round(as.numeric(ate_inv$est), 3),
+  MAH = round(as.numeric(ate_mah$est), 3),
+  IPW = round(as.numeric(ate_ipw), 3),
+  OLS = round(as.numeric(ate_reg), 3),
+  row.names = "High HHI"
+)
+
+knitr::kable(
+  results_pretty,
+  col.names = c("INV", "MAH", "IPW", "OLS"),
+  booktabs = TRUE
+) %>%
+  kable_styling(latex_options = "hold_position")
+```
+
+\newpage
+# Problem 8
+
+Nearest neighbor matching with inverse variance distance and with Mahalanobis distance have identical average treatment effect values as well as inverse propensity weighting and simple linear regression. This suggests that the estimated treatment effect is not sensitive to the choice of estimator.
+
+\newpage
+# Problem 9
+
+The ATE value using inverse variance distance increases when using a continous model for FFS and adding a covariant. 
+
+```{r}
+#| include: false
+ate_inv_cont <- Matching::Match(
+  Y = market.data$bid,
+  Tr = as.integer(market.data$market_type == "Uncompetitive"),
+  X = (market.data%>% select(avg_ffscost, avg_eligibles)),
+  M = 1,
+  Weight = 1,
+  version = "fast",
+  estimand = "ATE"
+)
+```
+
+```{r}
+#| include: false
+ate_inv_cont$est
+```
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#| tbl-cap: Inverse Variance Distance 
+
+options(knitr.kable.NA = 0)
+
+ipw_table <- data.frame(
+  `INV Baseline`  = round(as.numeric(ate_inv$est), 3),
+  `INV Alternate` = round(as.numeric(ate_inv_cont$est), 3),
+  row.names = "High HHI"
+)
+
+knitr::kable(
+  ipw_table,
+  col.names = c("INV Baseline", "INV Alternate"),
+  booktabs = TRUE
+) %>%
+  kable_styling(latex_options = "hold_position")
+
+```
+
+\newpage
+# Problem 10
+
+Working with this data allowed me to see how different estimators will give you identical values but the way that FFS costs are modeled (discrete vs continuous) can affect the average estimated treatment value. One thing that I learned was that it is crucial to know what each name of the row represents so that there is no issue missing a part of the dataset. I was surprised that the bid size between competitive and uncompetitive markets were quite close. 
+
