@@ -1,0 +1,707 @@
+---
+title: "Homework 2"
+subtitle: "Submission 2, Spring 2026"
+author: "Sophie Kim"
+format:
+  pdf:
+    output-file: "Kim-S-hwk2-2"
+    output-ext:  "pdf"
+    header-includes:
+      - \usepackage{float}
+      - \floatplacement{table}{H}
+---
+
+
+```{r}
+#| include: false
+library(tidyverse)
+library(stringr)
+library(readr)
+library(fs)
+```
+
+```{r}
+#| include: false
+data.2014 <- read_csv("..//data/output/data-2014-new.csv")
+data.2015 <- read_csv("..//data/output/data-2015.csv")
+data.2016 <- read_csv("..//data/output/data-2016.csv")
+data.2017 <- read_csv("..//data/output/data-2017.csv")
+data.2018 <- read_csv("..//data/output/data-2018-ffs.csv")
+data.2019 <- read_csv("..//data/output/data-2019.csv")
+```
+
+```{r}
+#| include: false
+combined <- bind_rows(
+  data.2014,
+  data.2015,
+  data.2016,
+  data.2017,
+  data.2018,
+  data.2019
+)
+```
+
+```{r}
+#| include: false
+names(combined)
+```
+
+```{r}
+#| include: false
+combined <- combined %>% mutate (basic_premium = case_when(
+        rebate_partc > 0 ~ 0,
+        partd == "No" & !is.na(premium) & is.na(premium_partc) ~ premium,
+        TRUE ~ premium_partc
+      ),
+      bid = case_when(
+        rebate_partc == 0 & basic_premium > 0 ~ (payment_partc + basic_premium) / riskscore_partc,
+        rebate_partc > 0  | basic_premium == 0 ~  payment_partc / riskscore_partc,
+        TRUE ~ NA_real_
+      )
+                                 )
+```
+
+```{r}
+#| include: false
+names(combined)
+```
+
+Problem 1
+
+```{r}
+#| include: false
+combine <- combined %>%
+    distinct(fips, year, contractid)
+    
+  # Part D but no Part C premium
+  #filter(!(partd == "Yes" & is.na(premium_partc))) 
+```
+
+```{r}
+#| include: false
+names(combined)
+```
+
+```{r}
+#| include: false
+plan_counts <- combine %>%
+  group_by(fips, year) %>%
+  select(fips,year) %>%
+  summarise(
+    plan_count = n(),
+      .groups = "drop"
+  )
+
+summary(plan_counts$plan_count)
+max(plan_counts$plan_count)
+mean(plan_counts$plan_count)
+```
+
+```{r}
+#| echo: false
+ggplot(plan_counts, aes(x = factor(year), y = plan_count)) +
+  geom_boxplot() +
+  labs(
+    x = "Year",
+    y = "Number of Plans per County",
+    title = "Distribution of Medicare Advantage Plan Counts by County (2014–2019)"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+#| include: false
+#plan_counts <- combined %>% 
+#group_by(fips)%>% 
+#count(fips, year, name = "plan_count")
+```
+
+```{r}
+#| echo: false
+#boxplot(plan_count ~ year, data = plan_counts,
+        #xlab = "Year",
+        #ylab = "Plan count",
+        #main = "Distribution of plan counts by year" )
+```
+
+Problem 2
+
+```{r}
+#| echo: false
+ggplot(filter(combined, year == 2014, !is.na(bid)), aes(x = bid)) +
+  geom_histogram(bins = 40, fill = "steelblue", color = "white") +
+  labs(
+    title = "Distribution of Medicare Advantage Plan Bids (2014)",
+    x = "Plan bid",
+    y = "Frequency"
+  ) 
+```
+
+```{r}
+#| echo: false
+ggplot(filter(combined, year == 2018, !is.na(bid)), aes(x = bid)) +
+  geom_histogram(bins = 40, fill = "steelblue", color = "white") +
+  labs(
+    title = "Distribution of Medicare Advantage Plan Bids (2018)",
+    x = "Plan bid",
+    y = "Frequency"
+  ) 
+```
+
+Problem 3
+
+```{r}
+#| include: false
+combined_hhi <- combined %>%
+  filter(!is.na(avg_enrolled), avg_enrolled > 0) %>%
+  filter(!is.na(avg_enrollment), avg_enrollment > 0) %>%
+  group_by(fips, year) %>%
+  mutate(market_share = avg_enrollment / avg_enrolled
+  ) %>%
+  ungroup()
+```
+
+```{r}
+#| include: false
+county_hhi <- combined_hhi %>%
+  group_by(fips, year) %>%
+  summarise(
+    hhi = sum(market_share^2),
+    .groups = "drop"
+  )
+```
+
+```{r}
+#| include: false
+avg_hhi <- county_hhi %>%
+  group_by(year) %>%
+  summarise(
+    avg_hhi = mean(hhi),
+    .groups = "drop"
+  )
+```
+
+```{r}
+avg_hhi
+```
+
+```{r}
+#| echo: false
+ggplot(avg_hhi, aes(x = year, y = avg_hhi)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Average Medicare Advantage Market Concentration (HHI)",
+    x = "Year",
+    y = "Average HHI"
+  )
+```
+
+Problem 4
+
+```{r}
+#| include: false
+ma_year <- combined %>%
+  group_by(year) %>%
+    mutate(ma_share = avg_enrolled / avg_eligibles) %>%
+    summarise(
+    mean_ma_share = mean(ma_share, na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+```{r}
+#| echo: false
+knitr::kable(
+  ma_year,
+  digits = 6,
+  col.names = c("Year", "Mean MA Enrollment Share"),
+  caption = "Average Share of Medicare Advantage (2014–2019)"
+)
+```
+
+```{r}
+#| echo: false
+ggplot(ma_year, aes(x = year, y =  mean_ma_share)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "Average Share of Medicare Advantage over Time",
+    x = "Year",
+    y = "Average Share"
+  )
+```
+
+Problem 5
+
+```{r}
+#| include: false
+marketshare2018 <- data.2018 %>%
+  filter(!is.na(avg_enrolled), avg_enrolled > 0) %>%
+  filter(!is.na(avg_enrollment), avg_enrollment > 0) %>%
+  group_by(fips, year) %>%
+  mutate(market_share = avg_enrollment / avg_enrolled
+  ) %>%
+  ungroup()
+```
+
+```{r}
+#| include: false
+hhi_by_county <- marketshare2018 %>%
+  group_by(fips) %>%
+  summarize(hhi = sum(market_share^2, na.rm = TRUE), .groups = "drop")
+  # summarise(mean_bid = mean(bid, na.rm = TRUE), .groups = "drop")
+```
+
+```{r}
+#| include: false
+hhi_33 <- quantile(hhi_by_county$hhi, 0.33, na.rm = TRUE)
+hhi_66 <- quantile(hhi_by_county$hhi, 0.66, na.rm = TRUE)
+```
+
+```{r}
+#| include: false
+hhi_by_county <- hhi_by_county %>%
+  mutate(market_type = case_when(
+    hhi <= hhi_33 ~ "Competitive",
+    hhi >= hhi_66 ~ "Uncompetitive",
+    TRUE ~ NA_character_
+  ))
+```
+
+```{r}
+#| include: false
+plan_level <- marketshare2018 %>%
+  left_join(hhi_by_county, by = "fips") %>%
+  filter(!is.na(market_type), !is.na(bid))
+
+county_mean_bid <- plan_level %>%
+  group_by(fips, market_type) %>%
+  summarise(mean_bid = mean(bid, na.rm = TRUE), .groups = "drop")
+        # i want to collapse all plans in one county to one (instead of mutate)
+
+avg_bid_by_market <- county_mean_bid %>%
+  group_by(market_type) %>%
+  summarise(avg_bid = mean(mean_bid), .groups = "drop")
+```
+
+```{r}
+#| echo: false
+knitr::kable(
+  avg_bid_by_market,
+  digits = 2,
+  col.names = c("Market Type", "Average Bid"),
+  caption = "Average Medicare Advantage Bid by Market Competitiveness (2018)"
+)
+```
+
+```{r}
+#| include: false
+# marketshare2018 <- data.2018 %>%
+#   filter(!is.na(avg_enrolled), avg_enrolled > 0) %>%
+#   filter(!is.na(avg_enrollment), avg_enrollment > 0) %>%
+#   group_by(fips, year) %>%
+#   mutate(market_share = avg_enrollment / avg_enrolled
+#   ) %>%
+#   ungroup()
+```
+
+```{r}
+#| include: false
+# hhi_2018 <- marketshare2018 %>%
+#   group_by(fips) %>%
+#   mutate(
+#     hhi = sum(market_share^2, na.rm = TRUE),
+#   )%>%
+#   ungroup()
+```
+
+```{r}
+#| include: false
+# avg_bid_by_market <- hhi_2018 %>%
+#   filter(!is.na(market_type), !is.na(bid)) %>%
+#   group_by(market_type) %>%
+#   summarise(
+#     avg_bid = mean(bid),
+#     .groups = "drop"
+#   )
+```
+
+```{r}
+# print(avg_bid_by_market)
+```
+
+Problem 6
+
+```{r}
+#| include: false
+# ffs.2018 <- read_csv("..//data/output/data-2018-ffs.csv")
+```
+
+```{r}
+#| include: false
+# colnames(ffs.2018)
+```
+
+```{r}
+#| include: false
+data.2018.ffs <- data.2018 %>%
+  mutate(
+    ffscost_q = ntile(avg_ffscost, 4)
+  )
+# made 4 quartiles here 
+```
+
+```{r}
+#| include: false
+q1 <- data.2018.ffs%>%
+  mutate(treated = if_else(ffscost_q == 1, "Treated", "Control")) %>%
+  group_by(treated) %>%
+  summarise(avg_bid = mean(bid, na.rm = TRUE), n = n(), .groups = "drop") %>%
+  mutate(quartile = "Q1")
+
+q2 <-  data.2018.ffs %>%
+  mutate(treated = if_else(ffscost_q == 2, "Treated", "Control")) %>%
+  group_by(treated) %>%
+  summarise(avg_bid = mean(bid, na.rm = TRUE), n = n(), .groups = "drop") %>%
+  mutate(quartile = "Q2")
+
+q3 <- data.2018.ffs %>%
+  mutate(treated = if_else(ffscost_q == 3, "Treated", "Control")) %>%
+  group_by(treated) %>%
+  summarise(avg_bid = mean(bid, na.rm = TRUE), n = n(), .groups = "drop") %>%
+  mutate(quartile = "Q3")
+
+q4 <- data.2018.ffs %>%
+  mutate(treated = if_else(ffscost_q == 4, "Treated", "Control")) %>%
+  group_by(treated) %>%
+  summarise(avg_bid = mean(bid, na.rm = TRUE), n = n(), .groups = "drop") %>%
+  mutate(quartile = "Q4")
+```
+
+```{r}
+#| echo: false
+big_avg_table <- bind_rows(q1, q2, q3, q4) %>%
+  select(quartile, treated, avg_bid, n)%>%
+  filter(!is.na(treated))
+```
+
+```{r}
+#| echo: false
+knitr::kable(
+  big_avg_table,
+  digits = 5,
+  col.names = c("Quartile", "Treated/Control", "Average Bid", "n"),
+  caption = "Average Bid for Treated/Control Groups per Quartile(2018)"
+)
+```
+
+Problem 7
+
+```{r}
+#| include: false
+options(repos = c(CRAN = "https://cran.rstudio.com/"))
+install.packages("MatchIt")
+```
+
+```{r}
+#| include: false
+library(MatchIt)
+
+pooled_data <- lapply(1:4, function(q) {
+
+  dat_q <- data.2018.ffs%>%
+    mutate(
+      treat = ifelse(ffscost_q == q, 1, 0),
+      outcome = bid,
+      covar = avg_ffscost
+    ) %>%
+    filter(!is.na(outcome), !is.na(treat), !is.na(covar))
+
+  dat_q
+})
+
+pooled_data <- do.call(rbind, pooled_data)
+```
+
+```{r}
+#| include: false
+m.out <- matchit(
+  treat ~ covar,
+  data = pooled_data,
+  method = "nearest",
+  distance = pooled_data$covar,
+  replace = FALSE
+)
+
+m.data <- match.data(m.out)
+
+inv_ate <- mean(m.data$outcome[m.data$treat == 1]) - mean(m.data$outcome[m.data$treat== 0])
+```
+
+```{r}
+#| include: false
+print(inv_ate)
+```
+
+```{r}
+#| include: false
+m.out <- matchit(
+  treat ~ covar,
+  data = pooled_data,
+  method = "nearest",
+  distance = "mahalanobis",
+  replace = FALSE
+)
+
+m.data <- match.data(m.out)
+mah_ate <- mean(m.data$outcome[m.data$treat == 1]) - mean(m.data$outcome[m.data$treat== 0])
+```
+
+```{r}
+#| include: false
+print(mah_ate)
+```
+
+```{r}
+#| include: false
+logit.model <- glm(treat ~ covar, family = binomial, data = pooled_data)
+pooled_data$ps <- fitted(logit.model)
+
+pooled_data <- pooled_data %>%
+  mutate(ipw = case_when(
+    treat == 1 ~ 1/ps,
+    treat == 0 ~ 1/(1 - ps)
+  ))
+
+mean.w1 <- pooled_data %>%
+  filter(treat == 1) %>%
+  summarize(mean_y = weighted.mean(outcome, ipw))
+
+mean.w0 <- pooled_data %>%
+  filter(treat == 0) %>%
+  summarize(mean_y = weighted.mean(outcome, ipw))
+
+ipw_ate <- mean.w1$mean_y - mean.w0$mean_y
+```
+
+```{r}
+#| include: false
+print(ipw_ate)
+```
+
+```{r}
+#| include: false
+reg1 <- lm(outcome ~ covar, data = pooled_data %>% filter(treat == 1))
+reg0 <- lm(outcome ~ covar, data = pooled_data %>% filter(treat == 0))
+
+pred1 <- predict(reg1, newdata = pooled_data)
+pred0 <- predict(reg0, newdata = pooled_data)
+
+reg_ate <- mean(pred1 - pred0)
+     
+```
+
+```{r}
+#| include: false
+print(reg_ate)
+```
+
+```{r}
+results <- data.frame(
+  inv_ate = inv_ate,
+  mah_ate = mah_ate,
+  ipw_ate = ipw_ate,
+  reg_ate = reg_ate
+)
+
+results
+```
+
+```{r}
+#| include: false
+# analysis <- data.2018.ffs %>%
+#   left_join(hhi_by_county %>% select(fips, market_type), by = "fips") %>%
+#   mutate(
+#     high_hhi  = as.integer(market_type == "Uncompetitive"),
+#     ffscost_q = as.integer(ffscost_q)
+#   ) %>%
+#   filter(!is.na(bid), !is.na(high_hhi), !is.na(ffscost_q))
+```
+
+```{r}
+#| include: false
+# get_nn_inv_q <- function(q){
+#   sub <- analysis %>%
+#     filter(ffscost_q == q) %>%
+#     transmute(y = bid, w = high_hhi, x = bid)
+
+#   if (length(unique(sub$w)) < 2) return(NA_real_)
+
+#   m <- Matching::Match(
+#     Y = sub$y, Tr = sub$w, X = sub$x,
+#     M = 1, Weight = 1, estimand = "ATE",
+#     ties = FALSE, version = "fast"
+#   )
+
+#   as.numeric(m$est)
+# }
+
+# ests <- sapply(1:4, get_nn_inv_q)
+# Ns   <- sapply(1:4, function(q) sum(analysis$ffscost_q == q))
+
+# nn_inv_ate <- weighted.mean(ests, w = Ns, na.rm = TRUE)
+# nn_inv_ate
+```
+
+```{r}
+#| include: false
+# nrow(analysis)
+# count(analysis, fips) %>% summarise(max_n = max(n))
+# hhi_by_county %>%
+#   count(fips) %>%
+#   summarise(max_dupes = max(n))
+```
+
+```{r}
+#| include: false
+# market_type_by_fips <- hhi_by_county %>%
+#   select(fips, market_type) %>%
+#   distinct(fips, .keep_all = TRUE)
+
+# analysis <- data.2018.ffs %>%
+#   left_join(market_type_by_fips, by = "fips") %>%
+#   mutate(
+#     high_hhi  = if_else(market_type == "Uncompetitive", 1L, 0L),
+#     ffscost_q = as.integer(ffscost_q)
+#   ) %>%
+#   filter(!is.na(bid), !is.na(high_hhi), !is.na(ffscost_q))
+```
+
+```{r}
+#| include: false
+# nrow(data.2018.ffs)
+# nrow(analysis)
+```
+
+```{r}
+#| include: false
+# Xq <- model.matrix(~ factor(ffscost_q), data = analysis)[, -1, drop = FALSE]
+```
+
+```{r}
+#| include: false
+# nn_inv <- Matching::Match(
+#   Y = analysis$bid,
+#   Tr = analysis$high_hhi,
+#   X = Xq,
+#   M = 1,
+#   Weight = 1,
+#   estimand = "ATE",
+#   exact = TRUE,
+#   ties = FALSE,
+#   version = "fast"
+# )
+```
+
+```{r}
+#| include: false
+# nn_inv$est
+# nn_inv$se
+```
+
+```{r}
+#| include: false
+# nn_mah <- Matching::Match(
+#   Y = analysis$bid,
+#   Tr = analysis$high_hhi,
+#   X = Xq,
+#   M = 1,
+#   Weight = 2,
+#   estimand = "ATE",
+#   exact = TRUE,
+#   ties = FALSE,
+#   version = "fast"
+# )
+```
+
+```{r}
+#| include: false
+# nn_mah$est
+# nn_mah$se
+```
+
+```{r}
+#| include: false
+# analysis2 <- analysis %>% 
+#   filter(!is.na(bid), !is.na(high_hhi), !is.na(ffscost_q), !is.na(avg_ffscost)) %>%
+#   arrange(ffscost_q, high_hhi, fips, bid)
+
+# nn_inv <- Matching::Match(
+#   Y = analysis2$bid,
+#   Tr = analysis2$high_hhi,
+#   X = analysis2$avg_ffscost,   # distance variable
+#   exact = analysis2$ffscost_q, # match only within quartile
+#   M = 1,
+#   Weight = 1,                 # inverse-variance distance
+#   estimand = "ATE",
+#   ties = TRUE,
+#   version = "fast"
+# )
+```
+
+```{r}
+#| include: false
+saveRDS(ate_table_reg, "ate_table_reg.rds")
+```
+
+Problem 8
+
+Nearest neighbor matching with inverse variance distance and with Mahalanobis distance have identical average treatment effect values. However, when using inverse propensity weighting and simple linear regression, both methods output different values that are smaller. 
+
+Problem 9
+
+```{r}
+#| include: false
+pooled_data_9 <- lapply(1:4, function(q) {
+
+  dat_q9 <- data.2018.ffs %>%
+    mutate(
+      treat = ifelse(ffscost_q == q, 1, 0),
+      outcome = bid,
+      covar1 = avg_ffscost,
+      covar2 = n_enrol
+    ) %>%
+    filter(!is.na(outcome), !is.na(treat), !is.na(covar1), !is.na(covar2))
+
+  dat_q9
+})
+
+pooled_data_9 <- do.call(rbind, pooled_data_9)
+```
+
+```{r}
+m.mah <- matchit(
+  treat ~ covar1 + covar2,
+  data = pooled_data_9,
+  method = "nearest",
+  distance = "mahalanobis",
+  replace = FALSE
+)
+
+m.man <- match.data(m.out)
+
+mah_9<- mean(m.data$outcome[m.data$treat == 1]) - mean(m.data$outcome[m.data$treat== 0])
+```
+
+```{r}
+print(mah_9)
+```
+
+
+Problem 10
+
+Working with this data allowed me to see how different estimators will give you vastly different values. One thing that I learned was that it is crucial to know what each name of the row represents so that there is no issue missing a part of the dataset. One thing that surprised me was how easy it was for library or model choices to cause errors or slow runtimes.
+
+
